@@ -8,7 +8,9 @@ struct PlanRootView: View {
     @State private var reps = 10
     @State private var days = "周一,周二,周三"
 
-    private let pick = ExerciseCatalog.exercises.map(\.name)
+    private var pick: [String] {
+        ExerciseCatalog.exercises.map(\.name)
+    }
 
     var body: some View {
         NavigationStack {
@@ -34,23 +36,33 @@ struct PlanRootView: View {
                     }
                 }
                 Section("我的计划") {
-                    ForEach(plans, id: \.persistentModelID) { p in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(ExerciseDisplay.zh(englishName: p.exercise))
-                                Text("\(p.repeatCount) 次")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if p.completed {
-                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    if plans.isEmpty {
+                        Text("暂无计划，请先在上方新建并保存")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(plans, id: \.persistentModelID) { p in
+                            NavigationLink {
+                                PlanDetailView(plan: p)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading) {
+                                        Text(ExerciseDisplay.zh(englishName: p.exercise))
+                                        Text("\(p.repeatCount) 次 · \(p.selectedDays)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if p.completed {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.green)
+                                    }
+                                }
                             }
                         }
-                    }
-                    .onDelete { idx in
-                        idx.map { plans[$0] }.forEach(context.delete)
-                        try? context.save()
+                        .onDelete { idx in
+                            idx.map { plans[$0] }.forEach(context.delete)
+                            try? context.save()
+                        }
                     }
                 }
             }

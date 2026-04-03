@@ -1,6 +1,6 @@
 import Foundation
 
-struct PostureResultSwift {
+struct PostureResultSwift: Equatable {
     let className: String
     let confidence: Float
     let repetitions: Int

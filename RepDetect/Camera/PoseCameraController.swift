@@ -3,21 +3,37 @@ import Combine
 import SwiftUI
 import Vision
 
-/// Runs Vision body pose + native KNN / jump-rope on camera frames.
+/// 按当前计划并行运行 KNN / 跳绳检测；叠加层只显示「计划内」运动。
 final class PoseSessionController: NSObject, ObservableObject {
     @Published var previewLayer: AVCaptureVideoPreviewLayer?
     @Published var overlayText: String = ""
     @Published var errorMessage: String?
+    /// 合并后的分类结果（用于达标判断），键为 C 端 class 名。
+    @Published var postureResults: [String: PostureResultSwift] = [:]
+    /// 跳绳累计次数（便于单独展示）。
+    @Published var jumpropeRepetitions: Int = 0
 
     private let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let sequenceHandler = VNSequenceRequestHandler()
     private let queue = DispatchQueue(label: "repdetect.pose.session")
-    private var bridge: PoseClassifierBridge?
-    private var devicePosition: AVCaptureDevice.Position = .back
+    private var knnBridge: PoseClassifierBridge?
+    private var jumpBridge: PoseClassifierBridge?
+    /// 仅展示这些 key（来自当前未完成计划的映射）
+    private var allowedClassifierKeys: Set<String> = []
 
-    func configure(bridge: PoseClassifierBridge?) {
-        self.bridge = bridge
+    func configure(
+        knn: PoseClassifierBridge?,
+        jump: PoseClassifierBridge?,
+        allowedKeys: Set<String>
+    ) {
+        knnBridge = knn
+        jumpBridge = jump
+        allowedClassifierKeys = allowedKeys
+        DispatchQueue.main.async {
+            self.jumpropeRepetitions = 0
+            self.postureResults = [:]
+        }
     }
 
     func flipCamera() {
@@ -38,6 +54,8 @@ final class PoseSessionController: NSObject, ObservableObject {
             self?.session.stopRunning()
         }
     }
+
+    private var devicePosition: AVCaptureDevice.Position = .back
 
     private func rebuildSession() {
         session.beginConfiguration()
@@ -86,8 +104,8 @@ final class PoseSessionController: NSObject, ObservableObject {
     }
 
     private func handle(sampleBuffer: CMSampleBuffer) {
-        guard let bridge else {
-            DispatchQueue.main.async { self.overlayText = "请先点击「开始」启动识别" }
+        guard knnBridge != nil || jumpBridge != nil else {
+            DispatchQueue.main.async { self.overlayText = "请先在「计划」中添加锻炼项目" }
             return
         }
 
@@ -105,25 +123,50 @@ final class PoseSessionController: NSObject, ObservableObject {
         let h = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
         let t = Int64(Date().timeIntervalSince1970 * 1000)
 
+        var merged: [String: PostureResultSwift] = [:]
+
         if let obs = request.results?.first as? VNHumanBodyPoseObservation {
             let landmarks = VisionBodyPoseMapper.landmarksXYZ99(from: obs, imageWidth: w, imageHeight: h)
-            let map = bridge.processFrame(landmarksXYZ99: landmarks, nowMs: t, hasPose: true)
-            publish(map)
+            if let k = knnBridge {
+                let m = k.processFrame(landmarksXYZ99: landmarks, nowMs: t, hasPose: true)
+                merge(&merged, m)
+            }
+            if let j = jumpBridge {
+                let m = j.processFrame(landmarksXYZ99: landmarks, nowMs: t, hasPose: true)
+                merge(&merged, m)
+            }
         } else {
             let flat = [Float](repeating: 0, count: 99)
-            let map = bridge.processFrame(landmarksXYZ99: flat, nowMs: t, hasPose: false)
-            publish(map)
+            if let k = knnBridge {
+                let m = k.processFrame(landmarksXYZ99: flat, nowMs: t, hasPose: false)
+                merge(&merged, m)
+            }
+            if let j = jumpBridge {
+                let m = j.processFrame(landmarksXYZ99: flat, nowMs: t, hasPose: false)
+                merge(&merged, m)
+            }
+        }
+
+        publish(merged: merged)
+    }
+
+    private func merge(_ acc: inout [String: PostureResultSwift], _ part: [String: PostureResultSwift]) {
+        for (k, v) in part {
+            acc[k] = v
         }
     }
 
-    private func publish(_ map: [String: PostureResultSwift]) {
-        let lines = map.sorted(by: { $0.key < $1.key }).map { k, v in
+    private func publish(merged: [String: PostureResultSwift]) {
+        let display = merged.filter { allowedClassifierKeys.contains($0.key) }
+        let lines = display.sorted(by: { $0.key < $1.key }).map { k, v in
             let label = ExerciseDisplay.zh(classifierKey: k)
             return "\(label)：次数 \(v.repetitions)　置信度 \(String(format: "%.2f", v.confidence))"
         }
         let text = lines.isEmpty ? "识别中…" : lines.joined(separator: "\n")
         DispatchQueue.main.async {
             self.overlayText = text
+            self.postureResults = merged
+            self.jumpropeRepetitions = merged["jumprope"]?.repetitions ?? 0
         }
     }
 }

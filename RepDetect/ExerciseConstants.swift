@@ -34,6 +34,29 @@ enum PoseClassNames {
     ]
 }
 
+/// 计划中的英文运动名 → C 端分类 key（与 Android / `pose_processor` 一致）。
+enum ExerciseClassifierKey {
+    static func key(forExerciseName name: String) -> String? {
+        switch name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "push up": return "pushups_down"
+        case "squat": return "squats"
+        case "lunge": return "lunges"
+        case "sit up": return "situp_up"
+        case "chest press": return "chestpress_down"
+        case "dead lift": return "deadlift_down"
+        case "shoulder press": return "shoulderpress_down"
+        case "warrior yoga": return "warrior"
+        case "tree yoga": return "tree_pose"
+        case "jump rope": return "jumprope"
+        default: return nil
+        }
+    }
+
+    static func allowedKeys(forPlanExerciseNames names: [String]) -> Set<String> {
+        Set(names.compactMap { key(forExerciseName: $0) })
+    }
+}
+
 /// UI 显示用中文（数据层仍用英文 `name` / 分类器 key）。
 enum ExerciseDisplay {
     static func zh(englishName: String) -> String {

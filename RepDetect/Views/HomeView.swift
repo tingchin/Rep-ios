@@ -13,11 +13,15 @@ struct HomeView: View {
                         Text("暂无进行中的计划").foregroundStyle(.secondary)
                     } else {
                         ForEach(plans.filter { !$0.completed }, id: \.persistentModelID) { p in
-                            VStack(alignment: .leading) {
-                                Text(ExerciseDisplay.zh(englishName: p.exercise))
-                                Text("\(p.repeatCount) 次 · \(p.selectedDays)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            NavigationLink {
+                                PlanDetailView(plan: p)
+                            } label: {
+                                VStack(alignment: .leading) {
+                                    Text(ExerciseDisplay.zh(englishName: p.exercise))
+                                    Text("\(p.repeatCount) 次 · \(p.selectedDays)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
