@@ -39,7 +39,7 @@ struct WorkoutView: View {
                     }
                     .padding()
 
-                    Button(started ? "Stop" : "Start") {
+                    Button(started ? "停止" : "开始") {
                         if started {
                             camera.stop()
                             started = false
@@ -55,7 +55,7 @@ struct WorkoutView: View {
                 }
                 Spacer()
             }
-            .navigationTitle("Workout")
+            .navigationTitle("锻炼")
         }
     }
 
@@ -73,7 +73,7 @@ struct WorkoutView: View {
                 let url = try CsvAssetCombiner.combineToDocuments(planExerciseNames: others)
                 bridge = PoseClassifierBridge.makeKNN(csvPath: url.path, isStreamMode: true)
             } catch {
-                camera.errorMessage = "CSV merge failed: \(error.localizedDescription)"
+                camera.errorMessage = "合并训练数据失败：\(error.localizedDescription)"
                 bridge = nil
             }
         } else {
@@ -81,7 +81,7 @@ struct WorkoutView: View {
                 let url = try CsvAssetCombiner.combineToDocuments(planExerciseNames: [])
                 bridge = PoseClassifierBridge.makeKNN(csvPath: url.path, isStreamMode: true)
             } catch {
-                camera.errorMessage = "CSV merge failed: \(error.localizedDescription)"
+                camera.errorMessage = "合并训练数据失败：\(error.localizedDescription)"
                 bridge = nil
             }
         }

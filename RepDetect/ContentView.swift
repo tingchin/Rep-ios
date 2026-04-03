@@ -6,16 +6,16 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $tab) {
             HomeView()
-                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tabItem { Label("首页", systemImage: "house.fill") }
                 .tag(0)
             WorkoutView()
-                .tabItem { Label("Workout", systemImage: "figure.strengthtraining.traditional") }
+                .tabItem { Label("锻炼", systemImage: "figure.strengthtraining.traditional") }
                 .tag(1)
             PlanRootView()
-                .tabItem { Label("Plan", systemImage: "calendar") }
+                .tabItem { Label("计划", systemImage: "calendar") }
                 .tag(2)
             ProfileView()
-                .tabItem { Label("Profile", systemImage: "person.fill") }
+                .tabItem { Label("我的", systemImage: "person.fill") }
                 .tag(3)
         }
     }

@@ -8,32 +8,32 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Today’s plan") {
+                Section("今日计划") {
                     if plans.filter({ !$0.completed }).isEmpty {
-                        Text("No active plans").foregroundStyle(.secondary)
+                        Text("暂无进行中的计划").foregroundStyle(.secondary)
                     } else {
                         ForEach(plans.filter { !$0.completed }, id: \.persistentModelID) { p in
                             VStack(alignment: .leading) {
-                                Text(p.exercise)
-                                Text("\(p.repeatCount) reps · \(p.selectedDays)")
+                                Text(ExerciseDisplay.zh(englishName: p.exercise))
+                                Text("\(p.repeatCount) 次 · \(p.selectedDays)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
                         }
                     }
                 }
-                Section("Recent activity") {
+                Section("最近活动") {
                     ForEach(results.prefix(8), id: \.persistentModelID) { r in
                         HStack {
-                            Text(r.exerciseName)
+                            Text(ExerciseDisplay.zh(englishName: r.exerciseName))
                             Spacer()
-                            Text("\(r.repeatedCount) reps")
+                            Text("\(r.repeatedCount) 次")
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
             }
-            .navigationTitle("RepDetect")
+            .navigationTitle("首页")
         }
     }
 }

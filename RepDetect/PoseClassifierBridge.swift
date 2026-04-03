@@ -50,7 +50,11 @@ final class PoseClassifierBridge {
                 String(cString: pose_bridge_result_class_name(buf.baseAddress! + i))
             }
             if r.confidence > 0 || r.repetitions > 0 {
-                out[name] = PostureResultSwift(className: name, confidence: r.confidence, repetitions: r.repetitions)
+                out[name] = PostureResultSwift(
+                    className: name,
+                    confidence: r.confidence,
+                    repetitions: Int(r.repetitions)
+                )
             }
         }
         return out

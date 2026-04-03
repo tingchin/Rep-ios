@@ -31,3 +31,6 @@ fastlane/test_output
 
 # XcodeGen (optional local output — keep project.yml tracked)
 # RepDetect.xcodeproj/
+
+# Local logs
+error.log

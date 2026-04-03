@@ -6,12 +6,12 @@ struct ProfileView: View {
             Form {
                 Section {
                     Text("RepDetect iOS")
-                    Text("Pose: Apple Vision · Classification: native KNN (same C core as Android)")
+                    Text("姿态检测：Apple Vision · 动作分类：设备端 KNN（与 Android 共用同一套 C 核心）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Profile")
+            .navigationTitle("我的")
         }
     }
 }

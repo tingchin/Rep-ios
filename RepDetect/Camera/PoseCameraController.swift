@@ -53,7 +53,7 @@ final class PoseSessionController: NSObject, ObservableObject {
               let input = try? AVCaptureDeviceInput(device: device),
               session.canAddInput(input)
         else {
-            DispatchQueue.main.async { self.errorMessage = "Camera unavailable" }
+            DispatchQueue.main.async { self.errorMessage = "无法使用相机，请检查权限或设备。" }
             session.commitConfiguration()
             return
         }
@@ -87,7 +87,7 @@ final class PoseSessionController: NSObject, ObservableObject {
 
     private func handle(sampleBuffer: CMSampleBuffer) {
         guard let bridge else {
-            DispatchQueue.main.async { self.overlayText = "Tap Start (after plans exist)" }
+            DispatchQueue.main.async { self.overlayText = "请先点击「开始」启动识别" }
             return
         }
 
@@ -118,9 +118,10 @@ final class PoseSessionController: NSObject, ObservableObject {
 
     private func publish(_ map: [String: PostureResultSwift]) {
         let lines = map.sorted(by: { $0.key < $1.key }).map { k, v in
-            "\(k): reps=\(v.repetitions) conf=\(String(format: "%.2f", v.confidence))"
+            let label = ExerciseDisplay.zh(classifierKey: k)
+            return "\(label)：次数 \(v.repetitions)　置信度 \(String(format: "%.2f", v.confidence))"
         }
-        let text = lines.isEmpty ? "Detecting…" : lines.joined(separator: "\n")
+        let text = lines.isEmpty ? "识别中…" : lines.joined(separator: "\n")
         DispatchQueue.main.async {
             self.overlayText = text
         }

@@ -4,7 +4,7 @@ import Foundation
 enum CsvAssetCombiner {
     static func combinedCsvURL() throws -> URL {
         guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            throw NSError(domain: "CsvAssetCombiner", code: 0, userInfo: [NSLocalizedDescriptionKey: "No documents directory"])
+            throw NSError(domain: "CsvAssetCombiner", code: 0, userInfo: [NSLocalizedDescriptionKey: "无法访问文档目录"])
         }
         return dir.appendingPathComponent("combined_poses.csv")
     }
@@ -66,7 +66,7 @@ enum CsvAssetCombiner {
 
         let names = bundleCsvResourceNames(for: planExerciseNames)
         guard !names.isEmpty else {
-            throw NSError(domain: "CsvAssetCombiner", code: 1, userInfo: [NSLocalizedDescriptionKey: "No CSV assets for plan"])
+            throw NSError(domain: "CsvAssetCombiner", code: 1, userInfo: [NSLocalizedDescriptionKey: "当前计划没有可用的训练数据文件"])
         }
 
         var data = Data()
@@ -83,7 +83,7 @@ enum CsvAssetCombiner {
             data.append(nl)
         }
         guard !data.isEmpty else {
-            throw NSError(domain: "CsvAssetCombiner", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not read any CSV from bundle"])
+            throw NSError(domain: "CsvAssetCombiner", code: 2, userInfo: [NSLocalizedDescriptionKey: "无法从应用包中读取任何 CSV 文件"])
         }
         try data.write(to: outURL, options: .atomic)
         return outURL

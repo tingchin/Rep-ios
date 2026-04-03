@@ -6,20 +6,22 @@ struct PlanRootView: View {
     @Query(sort: \PlanItem.exercise) private var plans: [PlanItem]
     @State private var exerciseName = "Squat"
     @State private var reps = 10
-    @State private var days = "Mon,Tue,Wed"
+    @State private var days = "周一,周二,周三"
 
     private let pick = ExerciseCatalog.exercises.map(\.name)
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Add plan") {
-                    Picker("Exercise", selection: $exerciseName) {
-                        ForEach(pick, id: \.self) { Text($0).tag($0) }
+                Section("新建计划") {
+                    Picker("运动项目", selection: $exerciseName) {
+                        ForEach(pick, id: \.self) { name in
+                            Text(ExerciseDisplay.zh(englishName: name)).tag(name)
+                        }
                     }
-                    Stepper("Repetitions: \(reps)", value: $reps, in: 1...500)
-                    TextField("Days (e.g. Mon,Tue)", text: $days)
-                    Button("Save plan") {
+                    Stepper("目标次数：\(reps)", value: $reps, in: 1...500)
+                    TextField("锻炼日（例如：周一,周二）", text: $days)
+                    Button("保存计划") {
                         let cal = ExerciseCatalog.exercises.first { $0.name == exerciseName }?.calorie ?? 3
                         let item = PlanItem(
                             exercise: exerciseName,
@@ -31,12 +33,12 @@ struct PlanRootView: View {
                         try? context.save()
                     }
                 }
-                Section("Plans") {
+                Section("我的计划") {
                     ForEach(plans, id: \.persistentModelID) { p in
                         HStack {
                             VStack(alignment: .leading) {
-                                Text(p.exercise)
-                                Text("\(p.repeatCount) reps")
+                                Text(ExerciseDisplay.zh(englishName: p.exercise))
+                                Text("\(p.repeatCount) 次")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -52,7 +54,7 @@ struct PlanRootView: View {
                     }
                 }
             }
-            .navigationTitle("Plans")
+            .navigationTitle("计划")
         }
     }
 }

@@ -33,3 +33,30 @@ enum PoseClassNames {
         "warrior", "tree_pose"
     ]
 }
+
+/// UI 显示用中文（数据层仍用英文 `name` / 分类器 key）。
+enum ExerciseDisplay {
+    static func zh(englishName: String) -> String {
+        if let e = ExerciseCatalog.exercises.first(where: { $0.name == englishName }) {
+            return e.nameZh
+        }
+        return zh(classifierKey: englishName)
+    }
+
+    private static let classifierZh: [String: String] = [
+        "pushups_down": "俯卧撑",
+        "squats": "深蹲",
+        "lunges": "弓步蹲",
+        "situp_up": "仰卧起坐",
+        "chestpress_down": "卧推",
+        "deadlift_down": "硬拉",
+        "shoulderpress_down": "肩上推举",
+        "warrior": "战士式瑜伽",
+        "tree_pose": "树式瑜伽",
+        "jumprope": "跳绳"
+    ]
+
+    static func zh(classifierKey: String) -> String {
+        classifierZh[classifierKey] ?? classifierKey
+    }
+}
