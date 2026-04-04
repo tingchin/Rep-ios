@@ -1,5 +1,4 @@
 import AVFoundation
-import Combine
 import SwiftUI
 import Vision
 
@@ -8,10 +7,14 @@ final class PoseSessionController: NSObject, ObservableObject {
     @Published var previewLayer: AVCaptureVideoPreviewLayer?
     @Published var overlayText: String = ""
     @Published var errorMessage: String?
-    /// 合并后的分类结果（用于达标判断），键为 C 端 class 名。
     @Published var postureResults: [String: PostureResultSwift] = [:]
-    /// 跳绳累计次数（便于单独展示）。
     @Published var jumpropeRepetitions: Int = 0
+    /// 用于骨骼叠加层（与 `lastPoseImageSize` 对应像素缓冲尺寸）。
+    @Published var lastBodyPoseObservation: VNHumanBodyPoseObservation?
+    @Published var lastPoseImageSize: CGSize = .zero
+    @Published var isUsingFrontCamera = false
+    /// `true` 表示 KNN/跳绳模型已就绪，可用于计数与自动完成计划。
+    @Published private(set) var recognitionReady = false
 
     private let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
@@ -19,25 +22,35 @@ final class PoseSessionController: NSObject, ObservableObject {
     private let queue = DispatchQueue(label: "repdetect.pose.session")
     private var knnBridge: PoseClassifierBridge?
     private var jumpBridge: PoseClassifierBridge?
-    /// 仅展示这些 key（来自当前未完成计划的映射）
     private var allowedClassifierKeys: Set<String> = []
+    private var devicePosition: AVCaptureDevice.Position = .back
+    /// 已 `start()` 但 CSV/KNN 仍在后台加载，此期间只跑 Vision 画骨骼。
+    private var bridgesLoading = false
 
     func configure(
         knn: PoseClassifierBridge?,
         jump: PoseClassifierBridge?,
-        allowedKeys: Set<String>
+        allowedKeys: Set<String>,
+        bridgesLoading: Bool = false
     ) {
         knnBridge = knn
         jumpBridge = jump
         allowedClassifierKeys = allowedKeys
+        self.bridgesLoading = bridgesLoading
         DispatchQueue.main.async {
             self.jumpropeRepetitions = 0
             self.postureResults = [:]
+            self.lastBodyPoseObservation = nil
+            let hasDetector = knn != nil || jump != nil
+            self.recognitionReady = !bridgesLoading && hasDetector
         }
     }
 
     func flipCamera() {
         devicePosition = devicePosition == .back ? .front : .back
+        DispatchQueue.main.async {
+            self.isUsingFrontCamera = self.devicePosition == .front
+        }
         queue.async { [weak self] in
             self?.rebuildSession()
         }
@@ -52,14 +65,20 @@ final class PoseSessionController: NSObject, ObservableObject {
     func stop() {
         queue.async { [weak self] in
             self?.session.stopRunning()
+            DispatchQueue.main.async {
+                self?.lastBodyPoseObservation = nil
+            }
         }
     }
 
-    private var devicePosition: AVCaptureDevice.Position = .back
-
     private func rebuildSession() {
         session.beginConfiguration()
-        session.sessionPreset = .high
+        /// 使用 720p 通常比 `.high` 冷启动更快，仍足够做姿态识别。
+        if session.canSetSessionPreset(.hd1280x720) {
+            session.sessionPreset = .hd1280x720
+        } else {
+            session.sessionPreset = .high
+        }
         for input in session.inputs {
             session.removeInput(input)
         }
@@ -96,6 +115,7 @@ final class PoseSessionController: NSObject, ObservableObject {
         layer.videoGravity = .resizeAspectFill
         DispatchQueue.main.async {
             self.previewLayer = layer
+            self.isUsingFrontCamera = self.devicePosition == .front
         }
 
         if !session.isRunning {
@@ -104,11 +124,6 @@ final class PoseSessionController: NSObject, ObservableObject {
     }
 
     private func handle(sampleBuffer: CMSampleBuffer) {
-        guard knnBridge != nil || jumpBridge != nil else {
-            DispatchQueue.main.async { self.overlayText = "请先在「计划」中添加锻炼项目" }
-            return
-        }
-
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
         let request = VNDetectHumanBodyPoseRequest()
@@ -123,27 +138,37 @@ final class PoseSessionController: NSObject, ObservableObject {
         let h = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
         let t = Int64(Date().timeIntervalSince1970 * 1000)
 
+        let bodyObs = request.results?.first as? VNHumanBodyPoseObservation
+
+        DispatchQueue.main.async {
+            self.lastBodyPoseObservation = bodyObs
+            self.lastPoseImageSize = CGSize(width: w, height: h)
+        }
+
         var merged: [String: PostureResultSwift] = [:]
 
-        if let obs = request.results?.first as? VNHumanBodyPoseObservation {
-            let landmarks = VisionBodyPoseMapper.landmarksXYZ99(from: obs, imageWidth: w, imageHeight: h)
-            if let k = knnBridge {
-                let m = k.processFrame(landmarksXYZ99: landmarks, nowMs: t, hasPose: true)
-                merge(&merged, m)
-            }
-            if let j = jumpBridge {
-                let m = j.processFrame(landmarksXYZ99: landmarks, nowMs: t, hasPose: true)
-                merge(&merged, m)
-            }
-        } else {
-            let flat = [Float](repeating: 0, count: 99)
-            if let k = knnBridge {
-                let m = k.processFrame(landmarksXYZ99: flat, nowMs: t, hasPose: false)
-                merge(&merged, m)
-            }
-            if let j = jumpBridge {
-                let m = j.processFrame(landmarksXYZ99: flat, nowMs: t, hasPose: false)
-                merge(&merged, m)
+        let canClassify = knnBridge != nil || jumpBridge != nil
+        if canClassify {
+            if let obs = bodyObs {
+                let landmarks = VisionBodyPoseMapper.landmarksXYZ99(from: obs, imageWidth: w, imageHeight: h)
+                if let k = knnBridge {
+                    let m = k.processFrame(landmarksXYZ99: landmarks, nowMs: t, hasPose: true)
+                    merge(&merged, m)
+                }
+                if let j = jumpBridge {
+                    let m = j.processFrame(landmarksXYZ99: landmarks, nowMs: t, hasPose: true)
+                    merge(&merged, m)
+                }
+            } else {
+                let flat = [Float](repeating: 0, count: 99)
+                if let k = knnBridge {
+                    let m = k.processFrame(landmarksXYZ99: flat, nowMs: t, hasPose: false)
+                    merge(&merged, m)
+                }
+                if let j = jumpBridge {
+                    let m = j.processFrame(landmarksXYZ99: flat, nowMs: t, hasPose: false)
+                    merge(&merged, m)
+                }
             }
         }
 
@@ -162,7 +187,14 @@ final class PoseSessionController: NSObject, ObservableObject {
             let label = ExerciseDisplay.zh(classifierKey: k)
             return "\(label)：次数 \(v.repetitions)　置信度 \(String(format: "%.2f", v.confidence))"
         }
-        let text = lines.isEmpty ? "识别中…" : lines.joined(separator: "\n")
+        let text: String
+        if bridgesLoading, knnBridge == nil, jumpBridge == nil {
+            text = "正在加载动作识别模型…"
+        } else if lines.isEmpty {
+            text = "识别中…"
+        } else {
+            text = lines.joined(separator: "\n")
+        }
         DispatchQueue.main.async {
             self.overlayText = text
             self.postureResults = merged

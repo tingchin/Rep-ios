@@ -6,7 +6,7 @@ struct PlanRootView: View {
     @Query(sort: \PlanItem.exercise) private var plans: [PlanItem]
     @State private var exerciseName = "Squat"
     @State private var reps = 10
-    @State private var days = "周一,周二,周三"
+    @State private var selectedWeekdays: Set<Int> = [0, 1, 2]
 
     private var pick: [String] {
         ExerciseCatalog.exercises.map(\.name)
@@ -22,14 +22,15 @@ struct PlanRootView: View {
                         }
                     }
                     Stepper("目标次数：\(reps)", value: $reps, in: 1...500)
-                    TextField("锻炼日（例如：周一,周二）", text: $days)
+                    WeekdayMultiPicker(selectedIndices: $selectedWeekdays)
                     Button("保存计划") {
+                        let daysStr = WeekdaySelection.string(from: selectedWeekdays)
                         let cal = ExerciseCatalog.exercises.first { $0.name == exerciseName }?.calorie ?? 3
                         let item = PlanItem(
                             exercise: exerciseName,
                             calories: cal,
                             repeatCount: reps,
-                            selectedDays: days
+                            selectedDays: daysStr
                         )
                         context.insert(item)
                         try? context.save()

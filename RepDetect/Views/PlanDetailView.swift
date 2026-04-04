@@ -6,6 +6,7 @@ struct PlanDetailView: View {
     @Bindable var plan: PlanItem
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedWeekdays: Set<Int> = []
 
     var body: some View {
         Form {
@@ -15,7 +16,10 @@ struct PlanDetailView: View {
             }
             Section("目标") {
                 Stepper("目标次数：\(plan.repeatCount)", value: $plan.repeatCount, in: 1...500)
-                TextField("锻炼日", text: $plan.selectedDays)
+                WeekdayMultiPicker(selectedIndices: $selectedWeekdays)
+                    .onChange(of: selectedWeekdays) { _, new in
+                        plan.selectedDays = WeekdaySelection.string(from: new)
+                    }
                 LabeledContent("预估热量（千卡）") {
                     Text(String(format: "%.1f", plan.calories))
                 }
@@ -25,6 +29,7 @@ struct PlanDetailView: View {
             }
             Section {
                 Button("保存修改") {
+                    plan.selectedDays = WeekdaySelection.string(from: selectedWeekdays)
                     try? context.save()
                 }
                 Button("删除此计划", role: .destructive) {
@@ -36,5 +41,8 @@ struct PlanDetailView: View {
         }
         .navigationTitle("计划详情")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            selectedWeekdays = WeekdaySelection.indices(from: plan.selectedDays)
+        }
     }
 }
