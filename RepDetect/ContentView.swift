@@ -8,15 +8,12 @@ struct ContentView: View {
             HomeView()
                 .tabItem { Label("首页", systemImage: "house.fill") }
                 .tag(0)
-            WorkoutView()
-                .tabItem { Label("锻炼", systemImage: "figure.strengthtraining.traditional") }
-                .tag(1)
             PlanRootView()
                 .tabItem { Label("计划", systemImage: "calendar") }
-                .tag(2)
+                .tag(1)
             ProfileView()
                 .tabItem { Label("我的", systemImage: "person.fill") }
-                .tag(3)
+                .tag(2)
         }
     }
 }

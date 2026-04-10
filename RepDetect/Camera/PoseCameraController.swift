@@ -27,6 +27,10 @@ final class PoseSessionController: NSObject, ObservableObject {
     /// 已 `start()` 但 CSV/KNN 仍在后台加载，此期间只跑 Vision 画骨骼。
     private var bridgesLoading = false
 
+    /// 用于在 Xcode 控制台观察相机冷启动耗时（从 `rebuildSession` 开始到首帧）。
+    private var sessionStartMonotonic: CFAbsoluteTime = 0
+    private var firstVideoFrameLogged = false
+
     func configure(
         knn: PoseClassifierBridge?,
         jump: PoseClassifierBridge?,
@@ -72,6 +76,8 @@ final class PoseSessionController: NSObject, ObservableObject {
     }
 
     private func rebuildSession() {
+        firstVideoFrameLogged = false
+        sessionStartMonotonic = CFAbsoluteTimeGetCurrent()
         session.beginConfiguration()
         /// 使用 720p 通常比 `.high` 冷启动更快，仍足够做姿态识别。
         if session.canSetSessionPreset(.hd1280x720) {
@@ -111,15 +117,21 @@ final class PoseSessionController: NSObject, ObservableObject {
 
         session.commitConfiguration()
 
+        let tBeforeStart = CFAbsoluteTimeGetCurrent()
+        if !session.isRunning {
+            session.startRunning()
+        }
+        let startRunningMs = (CFAbsoluteTimeGetCurrent() - tBeforeStart) * 1000
+        let sinceRebuildMs = (CFAbsoluteTimeGetCurrent() - sessionStartMonotonic) * 1000
+        print("[RepDetect] Camera: startRunning() \(String(format: "%.1f", startRunningMs)) ms; commit→running \(String(format: "%.1f", sinceRebuildMs)) ms")
+
         let layer = AVCaptureVideoPreviewLayer(session: session)
         layer.videoGravity = .resizeAspectFill
         DispatchQueue.main.async {
             self.previewLayer = layer
             self.isUsingFrontCamera = self.devicePosition == .front
-        }
-
-        if !session.isRunning {
-            session.startRunning()
+            let previewMs = (CFAbsoluteTimeGetCurrent() - self.sessionStartMonotonic) * 1000
+            print("[RepDetect] Camera: previewLayer set \(String(format: "%.1f", previewMs)) ms after rebuild start")
         }
     }
 
@@ -209,6 +221,11 @@ extension PoseSessionController: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        if !firstVideoFrameLogged {
+            firstVideoFrameLogged = true
+            let ms = (CFAbsoluteTimeGetCurrent() - sessionStartMonotonic) * 1000
+            print("[RepDetect] Camera: first video frame \(String(format: "%.1f", ms)) ms after rebuild start")
+        }
         handle(sampleBuffer: sampleBuffer)
     }
 }

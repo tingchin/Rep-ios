@@ -27,6 +27,15 @@ struct PlanDetailView: View {
             Section("状态") {
                 Toggle("已完成", isOn: $plan.completed)
             }
+            if !plan.completed {
+                Section {
+                    NavigationLink {
+                        WorkoutView(focusedPlan: plan)
+                    } label: {
+                        Label("开始锻炼（进入相机）", systemImage: "camera.fill")
+                    }
+                }
+            }
             Section {
                 Button("保存修改") {
                     plan.selectedDays = WeekdaySelection.string(from: selectedWeekdays)
