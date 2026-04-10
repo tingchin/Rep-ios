@@ -31,6 +31,14 @@ final class PoseSessionController: NSObject, ObservableObject {
     private var sessionStartMonotonic: CFAbsoluteTime = 0
     private var firstVideoFrameLogged = false
 
+    /// 避免每帧多次 `DispatchQueue.main.async` 把主队列塞满，导致预览层迟迟不能显示（见 log 中 previewLayer 数秒后才赋值）。
+    private var uiCoalesceScheduled = false
+    private var pendingBodyObs: VNHumanBodyPoseObservation?
+    private var pendingImageW: CGFloat = 0
+    private var pendingImageH: CGFloat = 0
+    private var pendingMerged: [String: PostureResultSwift] = [:]
+    private var pendingOverlayText: String = ""
+
     func configure(
         knn: PoseClassifierBridge?,
         jump: PoseClassifierBridge?,
@@ -78,6 +86,12 @@ final class PoseSessionController: NSObject, ObservableObject {
     private func rebuildSession() {
         firstVideoFrameLogged = false
         sessionStartMonotonic = CFAbsoluteTimeGetCurrent()
+
+        /// 改配置前必须先停会话，否则 Fig 报错且 delegate 仍可能狂刷帧，主线程异步块堆积导致预览黑屏很久。
+        if session.isRunning {
+            session.stopRunning()
+        }
+
         session.beginConfiguration()
         /// 使用 720p 通常比 `.high` 冷启动更快，仍足够做姿态识别。
         if session.canSetSessionPreset(.hd1280x720) {
@@ -135,6 +149,47 @@ final class PoseSessionController: NSObject, ObservableObject {
         }
     }
 
+    /// 在采集队列上计算叠字，合并为单次主线程刷新，避免主队列积压。
+    private func overlayTextForMerged(_ merged: [String: PostureResultSwift]) -> String {
+        let display = merged.filter { allowedClassifierKeys.contains($0.key) }
+        let lines = display.sorted(by: { $0.key < $1.key }).map { k, v in
+            let label = ExerciseDisplay.zh(classifierKey: k)
+            return "\(label)：次数 \(v.repetitions)　置信度 \(String(format: "%.2f", v.confidence))"
+        }
+        if bridgesLoading, knnBridge == nil, jumpBridge == nil {
+            return "正在加载动作识别模型…"
+        }
+        if lines.isEmpty {
+            return "识别中…"
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func scheduleUIPublish(
+        merged: [String: PostureResultSwift],
+        bodyObs: VNHumanBodyPoseObservation?,
+        w: CGFloat,
+        h: CGFloat
+    ) {
+        let text = overlayTextForMerged(merged)
+        pendingBodyObs = bodyObs
+        pendingImageW = w
+        pendingImageH = h
+        pendingMerged = merged
+        pendingOverlayText = text
+        if uiCoalesceScheduled { return }
+        uiCoalesceScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.uiCoalesceScheduled = false
+            self.lastBodyPoseObservation = self.pendingBodyObs
+            self.lastPoseImageSize = CGSize(width: self.pendingImageW, height: self.pendingImageH)
+            self.overlayText = self.pendingOverlayText
+            self.postureResults = self.pendingMerged
+            self.jumpropeRepetitions = self.pendingMerged["jumprope"]?.repetitions ?? 0
+        }
+    }
+
     private func handle(sampleBuffer: CMSampleBuffer) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
@@ -151,11 +206,6 @@ final class PoseSessionController: NSObject, ObservableObject {
         let t = Int64(Date().timeIntervalSince1970 * 1000)
 
         let bodyObs = request.results?.first as? VNHumanBodyPoseObservation
-
-        DispatchQueue.main.async {
-            self.lastBodyPoseObservation = bodyObs
-            self.lastPoseImageSize = CGSize(width: w, height: h)
-        }
 
         var merged: [String: PostureResultSwift] = [:]
 
@@ -184,33 +234,12 @@ final class PoseSessionController: NSObject, ObservableObject {
             }
         }
 
-        publish(merged: merged)
+        scheduleUIPublish(merged: merged, bodyObs: bodyObs, w: w, h: h)
     }
 
     private func merge(_ acc: inout [String: PostureResultSwift], _ part: [String: PostureResultSwift]) {
         for (k, v) in part {
             acc[k] = v
-        }
-    }
-
-    private func publish(merged: [String: PostureResultSwift]) {
-        let display = merged.filter { allowedClassifierKeys.contains($0.key) }
-        let lines = display.sorted(by: { $0.key < $1.key }).map { k, v in
-            let label = ExerciseDisplay.zh(classifierKey: k)
-            return "\(label)：次数 \(v.repetitions)　置信度 \(String(format: "%.2f", v.confidence))"
-        }
-        let text: String
-        if bridgesLoading, knnBridge == nil, jumpBridge == nil {
-            text = "正在加载动作识别模型…"
-        } else if lines.isEmpty {
-            text = "识别中…"
-        } else {
-            text = lines.joined(separator: "\n")
-        }
-        DispatchQueue.main.async {
-            self.overlayText = text
-            self.postureResults = merged
-            self.jumpropeRepetitions = merged["jumprope"]?.repetitions ?? 0
         }
     }
 }

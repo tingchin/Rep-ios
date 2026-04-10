@@ -34,7 +34,7 @@
 | 卧推 | Chest press | KNN |
 | 硬拉 | Dead lift | KNN |
 | 肩上推举 | Shoulder press | KNN |
-| 跳绳 | Jump rope | 专用检测（髋部等关键点，不依赖 CSV） |
+| 跳绳 | Jump rope | 专用检测（髋部 Y 轴波动；见下文「跳绳与防抖」） |
 | 战士式瑜伽 | Warrior yoga | KNN |
 | 树式瑜伽 | Tree yoga | KNN |
 
@@ -43,7 +43,18 @@
 ## 相机启动与调试
 
 - 会话使用 **720p**（`hd1280x720`）以减轻冷启动；点击「开始」后会**先启动相机与 Vision 骨骼**，再在后台合并 CSV 并初始化 KNN/跳绳桥，避免长时间黑屏等待模型。
+- **预览黑屏很久（`startRunning` 很快但画面迟迟不出）**：常见原因是 **主线程被大量 `main.async` 堆积**（每帧多次刷新 UI）。当前实现将骨骼、叠字、结果合并为 **单次主线程刷新**，并在改相机会话配置前 **`stopRunning()`**，避免 Fig 报错与会话反复重配时旧帧继续刷队列。
 - 若仍觉得首帧慢，可在 **Xcode 调试控制台** 查看以 `[RepDetect] Camera:` 开头的日志，包括：`startRunning()` 耗时、预览层就绪耗时、**首帧视频**到达耗时，便于区分是相机会话慢、主线程预览层慢还是后续处理慢。
+
+## 跳绳与防抖
+
+跳绳计数在 **`RepDetectNative/jumprope_detector.c`** 中实现（与 Android `app/src/main/cpp` 同源逻辑）。为减轻 **仅晃手机、非真实跳跃** 时的误加次数，默认做了：
+
+- 适当提高有效波动阈值（`dy_ratio`，相对肩髋距离）；
+- **两次计数之间的最小时间间隔**（冷却，毫秒级）；
+- **单帧髋部 Y 跳变过大** 时本帧不更新翻转状态机（抑制关键点抖动）。
+
+`jr_process_frame` 需传入 **`now_ms`**（由 `pose_processor` / `pose_bridge` 提供）。若真跳时觉得偏难计数，可在 `jr_init` 中微调 `dy_ratio`（略调低更灵敏，略调高更稳）。
 
 ## 环境要求
 
@@ -87,8 +98,8 @@ open RepDetect.xcodeproj
 
 ## 与 Android 同步 C 代码
 
-`ios/RepDetect/RepDetectNative` 来自 Android 工程中的 `app/src/main/cpp`（不含 `pose_jni.c`），并额外包含 `pose_bridge.c` / `pose_bridge.h`。  
-若你修改了 Android 侧的 C 源码，请重新复制更新后的 `.c` / `.h`；并保持 `jumprope_detector.c` 在双端可用（iOS 侧在非 `__ANDROID__` 时使用 `fprintf` 等输出）。
+`ios/RepDetect/RepDetectNative` 与仓库根目录 Android 工程中的 `app/src/main/cpp` 应对齐（不含 `pose_jni.c`），并额外包含 `pose_bridge.c` / `pose_bridge.h`。  
+若你修改了 **跳绳检测**（`jumprope_detector.c` / `.h`）或 **`pose_processor.c`**，请同步到另一端并重新编译；`jr_process_frame(..., now_ms)` 的签名在双端需一致。
 
 ## 与 Android 的差异与限制
 

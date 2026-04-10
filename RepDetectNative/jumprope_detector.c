@@ -1,4 +1,5 @@
 #include "jumprope_detector.h"
+#include <math.h>
 #include <string.h>
 #include <float.h>
 #include <stdio.h>
@@ -29,6 +30,9 @@
 
 /* 每隔多少帧打印一次常规状态 log（避免刷屏）*/
 #define LOG_INTERVAL 15
+
+/* 两次计数之间至少间隔（毫秒），避免晃手机/关键点抖动导致连加 */
+#define JR_COUNT_COOLDOWN_MS 320
 
 /* ────────────────────────────────────────────────
  * 内部工具函数
@@ -117,14 +121,17 @@ void jr_init(JumpRopeDetector *jr) {
         // ✅ smooth_alpha 从 0.5 提高到 0.9，让 max/min 快速跟上真实波动
         jr->smooth_alpha = 0.9f;
 
-        // ✅ dy_ratio 从 0.15 降低到 0.05，降低触发所需的最小波动幅度
-        jr->dy_ratio     = 0.05f;
+        /* dy_ratio 过小会导致手机晃动时误触发；0.12~0.15 更稳 */
+        jr->dy_ratio     = 0.13f;
 
         jr->up_ratio     = 0.55f;
         jr->down_ratio   = 0.35f;
         jr->count        = 0;
         jr->buffer_head  = 0;
         jr->buffer_count = 0;
+        jr->last_count_ms = -1000000000LL;
+        jr->prev_cy      = 0.0f;
+        jr->has_prev_cy  = 0;
 
         LOGI("[init] 跳绳检测器初始化完成"
              " dy_ratio=%.2f up_ratio=%.2f down_ratio=%.2f alpha=%.2f",
@@ -133,7 +140,8 @@ void jr_init(JumpRopeDetector *jr) {
 
 int jr_process_frame(JumpRopeDetector *jr,
                      const PointF3D   *landmarks,
-                     int               has_pose) {
+                     int               has_pose,
+                     long long         now_ms) {
     float cy              = 0.0f;
     float cy_shoulder_hip = 0.0f;
 
@@ -156,6 +164,18 @@ int jr_process_frame(JumpRopeDetector *jr,
     cy                = (left_hip_y  + right_hip_y)        * 0.5f;
     float cy_shoulder = (left_shoulder_y + right_shoulder_y) * 0.5f;
     cy_shoulder_hip   = cy - cy_shoulder;
+
+    /* 单帧髋部 Y 跳变过大（常见：晃手机导致关键点抖动），不更新 flip 状态机 */
+    int skip_flip = 0;
+    if (jr->has_prev_cy && cy_shoulder_hip > 30.0f) {
+        float jump     = fabsf(cy - jr->prev_cy);
+        float max_step = fmaxf(50.0f, 0.35f * cy_shoulder_hip);
+        if (jump > max_step) {
+            skip_flip = 1;
+        }
+    }
+    jr->has_prev_cy = 1;
+    jr->prev_cy     = cy;
 
     /* ── 每 LOG_INTERVAL 帧打印一次关键点原始值 ── */
     if (jr->buffer_count % LOG_INTERVAL == 0) {
@@ -200,15 +220,23 @@ int jr_process_frame(JumpRopeDetector *jr,
 
     /* ── 更新翻转状态机 ── */
     int prev_flip_flag = jr->flip_flag;
-    jr->flip_flag = update_flip_flag(cy,
-                                     cy_shoulder_hip,
-                                     jr->cy_max,
-                                     jr->cy_min,
-                                     jr->flip_flag,
-                                     jr);
+    if (!skip_flip) {
+        jr->flip_flag = update_flip_flag(cy,
+                                         cy_shoulder_hip,
+                                         jr->cy_max,
+                                         jr->cy_min,
+                                         jr->flip_flag,
+                                         jr);
+    }
 
     /* ── 计数：LOW → HIGH 触发一次 ── */
-    if (prev_flip_flag < jr->flip_flag) {
+    if (!skip_flip && prev_flip_flag < jr->flip_flag) {
+        if (now_ms - jr->last_count_ms < JR_COUNT_COOLDOWN_MS) {
+            LOGW("[count] 冷却中跳过（%lld ms < %d ms）",
+                 (long long)(now_ms - jr->last_count_ms), JR_COUNT_COOLDOWN_MS);
+            return 0;
+        }
+        jr->last_count_ms = now_ms;
         jr->count++;
         LOGI("[count] ✅✅✅ 跳绳计数 +1，当前总计 = %d", jr->count);
         return 1;

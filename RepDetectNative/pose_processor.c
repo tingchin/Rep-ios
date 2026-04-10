@@ -79,7 +79,7 @@ const char *pp_process_frame(PoseProcessor  *pp,
                               int             has_pose) {
     /* ── 跳绳模式：直接用 Y 轴波动检测 ── */
     if (pp->mode == MODE_JUMPROPE) {
-        int triggered = jr_process_frame(&pp->jr_detector, landmarks, has_pose);
+        int triggered = jr_process_frame(&pp->jr_detector, landmarks, has_pose, now_ms);
         if (triggered) {
             PostureResult *r = find_or_create_result(pp, JUMPROPE_CLASS_NAME);
             if (r) {

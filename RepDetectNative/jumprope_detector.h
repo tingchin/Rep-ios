@@ -36,6 +36,10 @@ typedef struct {
     float up_ratio;      /* 上升判断比例，默认 0.55 */
     float down_ratio;    /* 下降判断比例，默认 0.35 */
     float smooth_alpha;  /* EMA 平滑系数，默认 0.50 */
+
+    long long last_count_ms; /* 上次计数时刻（毫秒），防抖 */
+    float prev_cy;            /* 上一帧髋部 Y，用于抑制单帧尖峰（晃手机） */
+    int has_prev_cy;
 } JumpRopeDetector;
 
 /* ────────────────────────────────────────────────
@@ -54,7 +58,8 @@ void jr_init(JumpRopeDetector *jr);
  */
 int jr_process_frame(JumpRopeDetector *jr,
                      const PointF3D   *landmarks,
-                     int               has_pose);
+                     int               has_pose,
+                     long long         now_ms);
 
 /* 获取当前累计跳绳次数 */
 int jr_get_count(const JumpRopeDetector *jr);
