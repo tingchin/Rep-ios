@@ -39,6 +39,11 @@ final class PoseSessionController: NSObject, ObservableObject {
     private var pendingMerged: [String: PostureResultSwift] = [:]
     private var pendingOverlayText: String = ""
 
+    /// 限制骨骼/叠字刷新频率。每帧都 `@Published` 会让 SwiftUI 狂刷，`CameraPreviewRepresentable` 若每次 `updateUIView` 都拆插预览层会长时间黑屏。
+    private var lastUIEmitMonotonic: CFAbsoluteTime = 0
+    /// 约 20fps 上限；骨骼略降帧通常仍可接受，主线程与预览层会轻松很多。
+    private let minUIEmitInterval: CFTimeInterval = 1.0 / 20.0
+
     func configure(
         knn: PoseClassifierBridge?,
         jump: PoseClassifierBridge?,
@@ -86,6 +91,7 @@ final class PoseSessionController: NSObject, ObservableObject {
     private func rebuildSession() {
         firstVideoFrameLogged = false
         sessionStartMonotonic = CFAbsoluteTimeGetCurrent()
+        lastUIEmitMonotonic = 0
 
         /// 改配置前必须先停会话，否则 Fig 报错且 delegate 仍可能狂刷帧，主线程异步块堆积导致预览黑屏很久。
         if session.isRunning {
@@ -234,7 +240,13 @@ final class PoseSessionController: NSObject, ObservableObject {
             }
         }
 
-        scheduleUIPublish(merged: merged, bodyObs: bodyObs, w: w, h: h)
+        let wall = CFAbsoluteTimeGetCurrent()
+        let shouldEmitUI =
+            lastUIEmitMonotonic == 0 || (wall - lastUIEmitMonotonic) >= minUIEmitInterval
+        if shouldEmitUI {
+            lastUIEmitMonotonic = wall
+            scheduleUIPublish(merged: merged, bodyObs: bodyObs, w: w, h: h)
+        }
     }
 
     private func merge(_ acc: inout [String: PostureResultSwift], _ part: [String: PostureResultSwift]) {
@@ -262,6 +274,14 @@ extension PoseSessionController: AVCaptureVideoDataOutputSampleBufferDelegate {
 struct CameraPreviewRepresentable: UIViewRepresentable {
     var layer: AVCaptureVideoPreviewLayer?
 
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator {
+        weak var attached: AVCaptureVideoPreviewLayer?
+    }
+
     func makeUIView(context: Context) -> UIView {
         let v = UIView()
         v.backgroundColor = .black
@@ -269,9 +289,17 @@ struct CameraPreviewRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        uiView.layer.sublayers?.filter { $0 is AVCaptureVideoPreviewLayer }.forEach { $0.removeFromSuperlayer() }
-        guard let layer else { return }
+        guard let layer else {
+            context.coordinator.attached?.removeFromSuperlayer()
+            context.coordinator.attached = nil
+            return
+        }
+        /// 仅当会话重建、预览层实例变化时重新挂载。切勿在 SwiftUI 每次刷新时都 remove/insert，否则预览会长时间黑屏或闪烁。
+        if context.coordinator.attached !== layer {
+            context.coordinator.attached?.removeFromSuperlayer()
+            context.coordinator.attached = layer
+            uiView.layer.insertSublayer(layer, at: 0)
+        }
         layer.frame = uiView.bounds
-        uiView.layer.insertSublayer(layer, at: 0)
     }
 }
