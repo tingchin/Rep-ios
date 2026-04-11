@@ -166,7 +166,9 @@ final class PoseSessionController: NSObject, ObservableObject {
         if conn.isVideoRotationAngleSupported(90) {
             conn.videoRotationAngle = 90
         }
+        /// 默认 `automaticallyAdjustsVideoMirroring == true` 时手动设 `isVideoMirrored` 会抛 NSException 并崩溃（见 log）。
         if conn.isVideoMirroringSupported {
+            conn.automaticallyAdjustsVideoMirroring = false
             conn.isVideoMirrored = (cameraPosition == .front)
         }
     }
