@@ -44,6 +44,9 @@ final class PoseSessionController: NSObject, ObservableObject {
     /// 约 20fps 上限；骨骼略降帧通常仍可接受，主线程与预览层会轻松很多。
     private let minUIEmitInterval: CFTimeInterval = 1.0 / 20.0
 
+    /// 每次成功 `rebuildSession` 后递增；主线程预览回调若已过期则丢弃，避免连续翻转时异步块乱序导致预览黑屏。
+    private var previewSetupGeneration: UInt64 = 0
+
     func configure(
         knn: PoseClassifierBridge?,
         jump: PoseClassifierBridge?,
@@ -145,18 +148,29 @@ final class PoseSessionController: NSObject, ObservableObject {
         let sinceRebuildMs = (CFAbsoluteTimeGetCurrent() - sessionStartMonotonic) * 1000
         print("[RepDetect] Camera: startRunning() \(String(format: "%.1f", startRunningMs)) ms; commit→running \(String(format: "%.1f", sinceRebuildMs)) ms")
 
-        /// `AVCaptureVideoPreviewLayer` 必须在主线程创建；在采集队列上创建会导致预览长期黑屏，而 Vision 仍能从同一 session 的帧里跑姿态。
-        /// `devicePosition` 在 `queue` 上读取，捕获进闭包避免与 `flipCamera` 竞态。
+        /// 预览层：首次在主线程创建；之后复用同一实例（底层仍是同一 `AVCaptureSession`）。每次重建都 new 一层再交给 SwiftUI 换绑，翻转相机时极易黑屏。
+        /// `devicePosition` 在 `queue` 上读取进闭包；`previewSetupGeneration` 丢弃过期的 `main.async`，避免快速连翻时旧块覆盖新会话。
+        previewSetupGeneration += 1
+        let gen = previewSetupGeneration
         let cameraPosition = devicePosition
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let preview = AVCaptureVideoPreviewLayer(session: self.session)
-            preview.videoGravity = .resizeAspectFill
+            guard gen == self.previewSetupGeneration else { return }
+
+            let preview: AVCaptureVideoPreviewLayer
+            if let existing = self.previewLayer {
+                preview = existing
+            } else {
+                let created = AVCaptureVideoPreviewLayer(session: self.session)
+                created.videoGravity = .resizeAspectFill
+                self.previewLayer = created
+                preview = created
+                let previewMs = (CFAbsoluteTimeGetCurrent() - self.sessionStartMonotonic) * 1000
+                print("[RepDetect] Camera: previewLayer created (main) \(String(format: "%.1f", previewMs)) ms after rebuild start")
+            }
             Self.applyPreviewConnection(preview, cameraPosition: cameraPosition)
-            self.previewLayer = preview
             self.isUsingFrontCamera = cameraPosition == .front
-            let previewMs = (CFAbsoluteTimeGetCurrent() - self.sessionStartMonotonic) * 1000
-            print("[RepDetect] Camera: previewLayer set (main) \(String(format: "%.1f", previewMs)) ms after rebuild start")
+            preview.frame = preview.superlayer?.bounds ?? .zero
         }
     }
 
