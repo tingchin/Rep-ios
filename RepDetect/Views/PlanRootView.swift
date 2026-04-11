@@ -79,6 +79,8 @@ struct CreatePlanView: View {
                 TextField("计划名称（可选）", text: $planTitle)
                     .submitLabel(.done)
                     .onSubmit { dismissKeyboard() }
+                    .submitLabel(.done)
+                    .onSubmit { dismissKeyboard() }
                 Picker("运动项目", selection: $exerciseName) {
                     ForEach(pick, id: \.self) { name in
                         Text(ExerciseDisplay.zh(englishName: name)).tag(name)
@@ -123,9 +125,11 @@ struct CreatePlanView: View {
         .navigationBarTitleDisplayMode(.inline)
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("完成") { dismissKeyboard() }
+            ToolbarItem(placement: .keyboard) {
+                Button("完成") {
+                    dismissKeyboard()
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }

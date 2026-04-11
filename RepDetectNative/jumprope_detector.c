@@ -72,13 +72,20 @@ static int update_flip_flag(float cy,
                             float cy_shoulder_hip,
                             float cy_max,
                             float cy_min,
+                            float raw_max,
+                            float raw_min,
                             int   flip_flag,
                             const JumpRopeDetector *jr) {
-    float dy        = cy_max - cy_min;
+    float smooth_dy = cy_max - cy_min;
+    if (smooth_dy < 0.0f) smooth_dy = 0.0f;
+    float raw_dy = raw_max - raw_min;
+    if (raw_dy < 0.0f) raw_dy = 0.0f;
+    /* 仅用平滑 envelope 时，EMA 会把真实起伏压扁，日志里 dy≈7～10 仍小于 threshold；并入缓冲 raw 跨度 */
+    float dy        = fmaxf(smooth_dy, raw_dy * 0.80f);
     float threshold = jr->dy_ratio * cy_shoulder_hip;
 
-    LOGI("[flip] cy=%.1f  dy=%.1f  threshold=%.1f  sh_hip=%.1f  flag=%s",
-         cy, dy, threshold, cy_shoulder_hip,
+    LOGI("[flip] cy=%.1f  dy=%.1f(sm=%.1f raw=%.1f)  thr=%.1f  sh_hip=%.1f  flag=%s",
+         cy, dy, smooth_dy, raw_dy, threshold, cy_shoulder_hip,
          flip_flag == JR_FLAG_HIGH ? "HIGH(落地)" : "LOW(跳起)");
 
     if (dy <= threshold) {
@@ -118,11 +125,11 @@ void jr_init(JumpRopeDetector *jr) {
         jr->cy_min       = 0.0f;
         jr->flip_flag    = JR_FLAG_HIGH;
 
-        /* 略低于 0.9：真实跳绳髋部相对肩的起伏常小于「晃镜头」造成的整段平移在缓冲里形成的 dy */
-        jr->smooth_alpha = 0.85f;
+        /* 平滑过大时 cy_max/cy_min 跟太紧，真实跳绳 dy 被压到 threshold 以下（见 log） */
+        jr->smooth_alpha = 0.52f;
 
-        /* 略低以利真实跳绳；晃镜头主要靠肩髋同向平移与单帧尖峰抑制 */
-        jr->dy_ratio     = 0.14f;
+        /* 与 raw_dy 合并后阈值用略小的比例即可 */
+        jr->dy_ratio     = 0.10f;
 
         jr->up_ratio     = 0.55f;
         jr->down_ratio   = 0.35f;
@@ -167,24 +174,31 @@ int jr_process_frame(JumpRopeDetector *jr,
 
     int skip_flip = 0;
 
-    /* 晃镜头：肩中点与髋中点同向、位移比例接近 1，整体平移而非髋相对肩的屈伸 */
-    if (jr->has_prev_cy && jr->has_prev_shoulder && cy_shoulder_hip > 18.0f) {
+    /* 晃镜头：肩髋同向且位移幅值接近（整段平移），或单帧肩髋同时大幅同向移动 */
+    if (jr->has_prev_cy && jr->has_prev_shoulder && cy_shoulder_hip > 14.0f) {
         float dhip = cy - jr->prev_cy;
         float dsho = cy_shoulder - jr->prev_cy_shoulder;
         float ah   = fabsf(dhip);
         float as   = fabsf(dsho);
-        if (ah > 10.0f && as > 8.0f && dhip * dsho > 0.0f) {
-            float ratio = as > 1e-3f ? ah / as : 0.0f;
-            if (ratio > 0.58f && ratio < 1.65f) {
+        if (dhip * dsho > 0.0f) {
+            float mx = fmaxf(ah, as);
+            if (ah > 28.0f && as > 22.0f) {
                 skip_flip = 1;
+            } else if (ah > 5.0f && as > 4.0f && mx > 1e-3f && fabsf(ah - as) < 0.48f * mx) {
+                skip_flip = 1;
+            } else if (ah > 8.0f && as > 6.5f) {
+                float ratio = as > 1e-3f ? ah / as : 0.0f;
+                if (ratio > 0.52f && ratio < 1.92f) {
+                    skip_flip = 1;
+                }
             }
         }
     }
 
     /* 单帧髋部 Y 跳变过大（关键点尖峰），不更新 flip 状态机 */
-    if (!skip_flip && jr->has_prev_cy && cy_shoulder_hip > 25.0f) {
+    if (!skip_flip && jr->has_prev_cy && cy_shoulder_hip > 22.0f) {
         float jump     = fabsf(cy - jr->prev_cy);
-        float max_step = fmaxf(28.0f, 0.16f * cy_shoulder_hip);
+        float max_step = fmaxf(30.0f, 0.17f * cy_shoulder_hip);
         if (jump > max_step) {
             skip_flip = 1;
         }
@@ -242,6 +256,8 @@ int jr_process_frame(JumpRopeDetector *jr,
                                          cy_shoulder_hip,
                                          jr->cy_max,
                                          jr->cy_min,
+                                         raw_max,
+                                         raw_min,
                                          jr->flip_flag,
                                          jr);
     }

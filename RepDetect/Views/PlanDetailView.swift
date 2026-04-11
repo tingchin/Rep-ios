@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 /// 点击某条计划后进入，可查看/编辑并标记完成。
 struct PlanDetailView: View {
@@ -12,6 +13,8 @@ struct PlanDetailView: View {
         Form {
             Section("计划名称") {
                 TextField("留空则使用运动名称", text: $plan.planTitle)
+                    .submitLabel(.done)
+                    .onSubmit { dismissKeyboard() }
             }
             Section("运动") {
                 Text(ExerciseDisplay.zh(englishName: plan.exercise))
@@ -53,8 +56,21 @@ struct PlanDetailView: View {
         }
         .navigationTitle(plan.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItem(placement: .keyboard) {
+                Button("完成") {
+                    dismissKeyboard()
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
         .onAppear {
             selectedWeekdays = WeekdaySelection.indices(from: plan.selectedDays)
         }
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
