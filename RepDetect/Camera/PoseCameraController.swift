@@ -167,7 +167,7 @@ final class PoseSessionController: NSObject, ObservableObject {
             conn.videoRotationAngle = 90
         }
         if conn.isVideoMirroringSupported {
-            conn.isVideoMirroringEnabled = (cameraPosition == .front)
+            conn.isVideoMirrored = (cameraPosition == .front)
         }
     }
 
@@ -322,7 +322,8 @@ struct CameraPreviewRepresentable: UIViewRepresentable {
 }
 
 /// 在 `layoutSubviews` 里同步 `frame`。若只在 `updateUIView` 里设 `frame`，首帧时常 `bounds == .zero`，且没有其它 `@Published` 时 SwiftUI 可能不再回调，预览会一直保持零面积（黑屏）；有人体后骨骼刷新会间接触发更新才「碰巧」恢复。
-private final class CameraPreviewHostView: UIView {
+/// 不能标为 `private`：`UIViewRepresentable` 的方法签名不能引用比自身更窄的可见类型。
+final class CameraPreviewHostView: UIView {
     weak var previewLayer: AVCaptureVideoPreviewLayer?
 
     override func layoutSubviews() {
