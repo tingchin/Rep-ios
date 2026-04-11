@@ -192,7 +192,7 @@ final class PoseSessionController: NSObject, ObservableObject {
         let display = merged.filter { allowedClassifierKeys.contains($0.key) }
         let lines = display.sorted(by: { $0.key < $1.key }).map { k, v in
             let label = ExerciseDisplay.zh(classifierKey: k)
-            return "\(label)：次数 \(v.repetitions)　置信度 \(String(format: "%.2f", v.confidence))"
+            return "\(label)：次数 \(v.repetitions)"
         }
         if bridgesLoading, knnBridge == nil, jumpBridge == nil {
             return "正在加载动作识别模型…"

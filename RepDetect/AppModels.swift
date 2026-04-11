@@ -3,6 +3,8 @@ import SwiftData
 
 @Model
 final class PlanItem {
+    /// 用户自定义计划名；为空串时在界面用运动中文名展示。
+    var planTitle: String = ""
     var exercise: String
     var calories: Double
     var repeatCount: Int
@@ -11,6 +13,7 @@ final class PlanItem {
     var timeCompleted: Int64?
 
     init(
+        planTitle: String = "",
         exercise: String,
         calories: Double,
         repeatCount: Int,
@@ -18,12 +21,22 @@ final class PlanItem {
         completed: Bool = false,
         timeCompleted: Int64? = nil
     ) {
+        self.planTitle = planTitle
         self.exercise = exercise
         self.calories = calories
         self.repeatCount = repeatCount
         self.selectedDays = selectedDays
         self.completed = completed
         self.timeCompleted = timeCompleted
+    }
+}
+
+extension PlanItem {
+    /// 列表 / 导航栏标题：优先自定义名称，否则用运动中文名。
+    var displayTitle: String {
+        let t = planTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !t.isEmpty { return t }
+        return ExerciseDisplay.zh(englishName: exercise)
     }
 }
 

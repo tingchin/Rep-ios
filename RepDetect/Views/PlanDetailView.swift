@@ -10,6 +10,9 @@ struct PlanDetailView: View {
 
     var body: some View {
         Form {
+            Section("计划名称") {
+                TextField("留空则使用运动名称", text: $plan.planTitle)
+            }
             Section("运动") {
                 Text(ExerciseDisplay.zh(englishName: plan.exercise))
                     .font(.headline)
@@ -48,7 +51,7 @@ struct PlanDetailView: View {
                 }
             }
         }
-        .navigationTitle("计划详情")
+        .navigationTitle(plan.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             selectedWeekdays = WeekdaySelection.indices(from: plan.selectedDays)

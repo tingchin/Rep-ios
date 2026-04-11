@@ -87,7 +87,12 @@ struct WorkoutView: View {
                             if let key = ExerciseClassifierKey.key(forExerciseName: plan.exercise) {
                                 let cur = camera.postureResults[key]?.repetitions ?? 0
                                 HStack {
-                                    Text(ExerciseDisplay.zh(englishName: plan.exercise))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(plan.displayTitle)
+                                        Text(ExerciseDisplay.zh(englishName: plan.exercise))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
                                     Spacer()
                                     Text("\(cur) / \(plan.repeatCount) 次")
                                         .monospacedDigit()
@@ -126,7 +131,7 @@ struct WorkoutView: View {
             }
             .padding(.bottom, 8)
         }
-        .navigationTitle("锻炼")
+        .navigationTitle(focusedPlan.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(camera.$postureResults) { results in
             tryCompletePlansIfNeeded(from: results)
@@ -234,7 +239,7 @@ struct WorkoutView: View {
             guard let reps = results[key]?.repetitions, reps >= plan.repeatCount else { continue }
             plan.completed = true
             plan.timeCompleted = now
-            completedNames.append(ExerciseDisplay.zh(englishName: plan.exercise))
+            completedNames.append(plan.displayTitle)
         }
 
         if !completedNames.isEmpty {

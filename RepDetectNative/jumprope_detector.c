@@ -32,7 +32,7 @@
 #define LOG_INTERVAL 15
 
 /* 两次计数之间至少间隔（毫秒），避免晃手机/关键点抖动导致连加 */
-#define JR_COUNT_COOLDOWN_MS 320
+#define JR_COUNT_COOLDOWN_MS 520
 
 /* ────────────────────────────────────────────────
  * 内部工具函数
@@ -121,8 +121,8 @@ void jr_init(JumpRopeDetector *jr) {
         // ✅ smooth_alpha 从 0.5 提高到 0.9，让 max/min 快速跟上真实波动
         jr->smooth_alpha = 0.9f;
 
-        /* dy_ratio 过小会导致手机晃动时误触发；0.12~0.15 更稳 */
-        jr->dy_ratio     = 0.13f;
+        /* dy_ratio 越大越要求髋部起伏相对肩髋距足够大，轻微晃镜头不易误计数 */
+        jr->dy_ratio     = 0.19f;
 
         jr->up_ratio     = 0.55f;
         jr->down_ratio   = 0.35f;
@@ -169,7 +169,7 @@ int jr_process_frame(JumpRopeDetector *jr,
     int skip_flip = 0;
     if (jr->has_prev_cy && cy_shoulder_hip > 30.0f) {
         float jump     = fabsf(cy - jr->prev_cy);
-        float max_step = fmaxf(50.0f, 0.35f * cy_shoulder_hip);
+        float max_step = fmaxf(40.0f, 0.22f * cy_shoulder_hip);
         if (jump > max_step) {
             skip_flip = 1;
         }

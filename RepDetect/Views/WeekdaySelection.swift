@@ -19,6 +19,17 @@ enum WeekdaySelection {
         let sorted = indices.isEmpty ? [0] : indices.sorted()
         return sorted.map { labels[$0] }.joined(separator: ",")
     }
+
+    /// `labels` 下标：周一=0 … 周日=6。与 `Calendar` 的 `weekday`（1=周日…7=周六）对齐。
+    static func mondayFirstWeekdayIndex(for date: Date = Date()) -> Int {
+        let wd = Calendar.current.component(.weekday, from: date)
+        return (wd + 5) % 7
+    }
+
+    /// 今天是否为该计划勾选的锻炼日之一。
+    static func scheduleIncludesToday(_ stored: String) -> Bool {
+        indices(from: stored).contains(mondayFirstWeekdayIndex())
+    }
 }
 
 /// 计划页 / 详情页共用的「锻炼日」多选。
