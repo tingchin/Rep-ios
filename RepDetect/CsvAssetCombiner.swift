@@ -2,6 +2,25 @@ import Foundation
 
 /// Merges bundled `pose/*.csv` into Documents, mirroring Android `combineCsvFiles`.
 enum CsvAssetCombiner {
+    /// 兼容三种常见打包方式：① `Bundle/.../pose/name.csv`（文件夹引用）；② `Bundle/.../name.csv`（文件直接进资源）；③ `.../Resources/pose/name.csv` 物理路径。
+    private static func bundledCsvURL(baseName: String) -> URL? {
+        let base = baseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return nil }
+        if let u = Bundle.main.url(forResource: base, withExtension: "csv", subdirectory: "pose") {
+            return u
+        }
+        if let u = Bundle.main.url(forResource: base, withExtension: "csv") {
+            return u
+        }
+        if let r = Bundle.main.resourceURL {
+            let p = r.appendingPathComponent("pose/\(base).csv")
+            if FileManager.default.fileExists(atPath: p.path) {
+                return p
+            }
+        }
+        return nil
+    }
+
     static func combinedCsvURL() throws -> URL {
         guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             throw NSError(domain: "CsvAssetCombiner", code: 0, userInfo: [NSLocalizedDescriptionKey: "无法访问文档目录"])
@@ -69,10 +88,24 @@ enum CsvAssetCombiner {
             throw NSError(domain: "CsvAssetCombiner", code: 1, userInfo: [NSLocalizedDescriptionKey: "当前计划没有可用的训练数据文件"])
         }
 
+        var missing: [String] = []
+        for base in names {
+            if bundledCsvURL(baseName: base) == nil {
+                missing.append("\(base).csv")
+            }
+        }
+        if !missing.isEmpty {
+            let msg = """
+            未在应用包内找到 CSV：\(missing.joined(separator: "、"))。
+            请在 Xcode 将仓库内 `Resources/pose` 以「文件夹引用（蓝色文件夹）」拖入应用 Target，并勾选 Copy Bundle Resources；或把各 `.csv` 加入该 Target，使运行时能解析为 `pose/文件名.csv` 或 Bundle 根目录下的 `文件名.csv`。
+            """
+            throw NSError(domain: "CsvAssetCombiner", code: 3, userInfo: [NSLocalizedDescriptionKey: msg])
+        }
+
         var data = Data()
         let nl = "\n".data(using: .utf8)!
         for base in names {
-            guard let url = Bundle.main.url(forResource: base, withExtension: "csv", subdirectory: "pose") else {
+            guard let url = bundledCsvURL(baseName: base) else {
                 continue
             }
             var chunk = try Data(contentsOf: url)
@@ -83,7 +116,7 @@ enum CsvAssetCombiner {
             data.append(nl)
         }
         guard !data.isEmpty else {
-            throw NSError(domain: "CsvAssetCombiner", code: 2, userInfo: [NSLocalizedDescriptionKey: "无法从应用包中读取任何 CSV 文件"])
+            throw NSError(domain: "CsvAssetCombiner", code: 2, userInfo: [NSLocalizedDescriptionKey: "CSV 文件存在但合并后为空，请检查文件内容"])
         }
         try data.write(to: outURL, options: .atomic)
         return outURL

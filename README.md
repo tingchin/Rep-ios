@@ -78,9 +78,9 @@ open RepDetect.xcodeproj
 
 KNN 合并逻辑期望 Bundle 内存在：
 
-`pose/<英文名>.csv`（如 `squats.csv`、`pushups.csv`）
+`pose/<英文名>.csv`（如 `squats.csv`、`lunges.csv`）
 
-与 Android 端文件名保持一致。
+与 Android 端文件名保持一致。若 Xcode 把各 `.csv` 直接打进 Bundle 根目录（没有 `pose` 子目录），合并逻辑也会按文件名回退查找；仍**推荐**用 **文件夹引用** 保持 `pose/` 结构，便于与 Android 一致。
 
 ## 与 Android 同步 C 代码
 
