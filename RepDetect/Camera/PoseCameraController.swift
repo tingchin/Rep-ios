@@ -145,13 +145,29 @@ final class PoseSessionController: NSObject, ObservableObject {
         let sinceRebuildMs = (CFAbsoluteTimeGetCurrent() - sessionStartMonotonic) * 1000
         print("[RepDetect] Camera: startRunning() \(String(format: "%.1f", startRunningMs)) ms; commit→running \(String(format: "%.1f", sinceRebuildMs)) ms")
 
-        let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill
-        DispatchQueue.main.async {
-            self.previewLayer = layer
-            self.isUsingFrontCamera = self.devicePosition == .front
+        /// `AVCaptureVideoPreviewLayer` 必须在主线程创建；在采集队列上创建会导致预览长期黑屏，而 Vision 仍能从同一 session 的帧里跑姿态。
+        /// `devicePosition` 在 `queue` 上读取，捕获进闭包避免与 `flipCamera` 竞态。
+        let cameraPosition = devicePosition
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let preview = AVCaptureVideoPreviewLayer(session: self.session)
+            preview.videoGravity = .resizeAspectFill
+            Self.applyPreviewConnection(preview, cameraPosition: cameraPosition)
+            self.previewLayer = preview
+            self.isUsingFrontCamera = cameraPosition == .front
             let previewMs = (CFAbsoluteTimeGetCurrent() - self.sessionStartMonotonic) * 1000
-            print("[RepDetect] Camera: previewLayer set \(String(format: "%.1f", previewMs)) ms after rebuild start")
+            print("[RepDetect] Camera: previewLayer set (main) \(String(format: "%.1f", previewMs)) ms after rebuild start")
+        }
+    }
+
+    /// 与 `videoOutput` 的 connection 一致，避免预览方向与处理帧不一致；前摄在支持时镜像。
+    private static func applyPreviewConnection(_ preview: AVCaptureVideoPreviewLayer, cameraPosition: AVCaptureDevice.Position) {
+        guard let conn = preview.connection else { return }
+        if conn.isVideoRotationAngleSupported(90) {
+            conn.videoRotationAngle = 90
+        }
+        if conn.isVideoMirroringSupported {
+            conn.isVideoMirroringEnabled = (cameraPosition == .front)
         }
     }
 
@@ -282,16 +298,17 @@ struct CameraPreviewRepresentable: UIViewRepresentable {
         weak var attached: AVCaptureVideoPreviewLayer?
     }
 
-    func makeUIView(context: Context) -> UIView {
-        let v = UIView()
+    func makeUIView(context: Context) -> CameraPreviewHostView {
+        let v = CameraPreviewHostView()
         v.backgroundColor = .black
         return v
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
+    func updateUIView(_ uiView: CameraPreviewHostView, context: Context) {
         guard let layer else {
             context.coordinator.attached?.removeFromSuperlayer()
             context.coordinator.attached = nil
+            uiView.previewLayer = nil
             return
         }
         /// 仅当会话重建、预览层实例变化时重新挂载。切勿在 SwiftUI 每次刷新时都 remove/insert，否则预览会长时间黑屏或闪烁。
@@ -300,6 +317,16 @@ struct CameraPreviewRepresentable: UIViewRepresentable {
             context.coordinator.attached = layer
             uiView.layer.insertSublayer(layer, at: 0)
         }
-        layer.frame = uiView.bounds
+        uiView.previewLayer = layer
+    }
+}
+
+/// 在 `layoutSubviews` 里同步 `frame`。若只在 `updateUIView` 里设 `frame`，首帧时常 `bounds == .zero`，且没有其它 `@Published` 时 SwiftUI 可能不再回调，预览会一直保持零面积（黑屏）；有人体后骨骼刷新会间接触发更新才「碰巧」恢复。
+private final class CameraPreviewHostView: UIView {
+    weak var previewLayer: AVCaptureVideoPreviewLayer?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        previewLayer?.frame = bounds
     }
 }
