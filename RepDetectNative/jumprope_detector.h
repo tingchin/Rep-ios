@@ -40,6 +40,8 @@ typedef struct {
     long long last_count_ms; /* 上次计数时刻（毫秒），防抖 */
     float prev_cy;            /* 上一帧髋部 Y，用于抑制单帧尖峰（晃手机） */
     int has_prev_cy;
+    float prev_cy_shoulder;   /* 上一帧肩中点 Y，与肩髋同向平移检测（晃镜头） */
+    int has_prev_shoulder;
 } JumpRopeDetector;
 
 /* ────────────────────────────────────────────────

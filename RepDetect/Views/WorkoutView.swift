@@ -15,9 +15,9 @@ struct WorkoutView: View {
     @State private var isPreparingModels = false
     @State private var sessionStartDate: Date?
 
-    private var plansForSession: [PlanItem] {
-        if focusedPlan.completed { return [] }
-        return [focusedPlan]
+    /// 本会话始终针对当前这条 `PlanItem`（达标后 `completed` 会变 true，仍须能点「停止」并写入历史）。
+    private var sessionPlans: [PlanItem] {
+        [focusedPlan]
     }
 
     var body: some View {
@@ -47,11 +47,10 @@ struct WorkoutView: View {
                     .background(.black.opacity(0.45))
                     .padding()
             }
-            .frame(maxWidth: .infinity)
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             VStack(spacing: 8) {
-                if plansForSession.isEmpty {
+                if !started, focusedPlan.completed {
                     Text("该计划已完成，请返回计划页。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -70,7 +69,7 @@ struct WorkoutView: View {
                         .frame(maxWidth: .infinity)
                 }
 
-                if started, !plansForSession.isEmpty {
+                if started {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("当前计划进度")
                             .font(.caption)
@@ -83,7 +82,7 @@ struct WorkoutView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        ForEach(plansForSession, id: \.persistentModelID) { plan in
+                        ForEach(sessionPlans, id: \.persistentModelID) { plan in
                             if let key = ExerciseClassifierKey.key(forExerciseName: plan.exercise) {
                                 let cur = camera.postureResults[key]?.repetitions ?? 0
                                 HStack {
@@ -126,7 +125,7 @@ struct WorkoutView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!started && isPreparingModels || plansForSession.isEmpty)
+                    .disabled(!started && (isPreparingModels || focusedPlan.completed))
                 }
             }
             .padding(.bottom, 8)
@@ -155,7 +154,11 @@ struct WorkoutView: View {
 
         camera.errorMessage = nil
         completionNotice = nil
-        let names = plansForSession.map(\.exercise)
+        guard !focusedPlan.completed else {
+            camera.errorMessage = "当前计划无效或已完成。"
+            return
+        }
+        let names = sessionPlans.map(\.exercise)
         guard !names.isEmpty else {
             camera.errorMessage = "当前计划无效或已完成。"
             return
@@ -186,7 +189,7 @@ struct WorkoutView: View {
         guard let start = sessionStartDate else { return }
         let end = Date()
         let durationMin = max(end.timeIntervalSince(start) / 60.0, 0.01)
-        for plan in plansForSession {
+        for plan in sessionPlans {
             guard let key = ExerciseClassifierKey.key(forExerciseName: plan.exercise) else { continue }
             let reps = camera.postureResults[key]?.repetitions ?? 0
             let conf = camera.postureResults[key]?.confidence ?? 0
@@ -234,7 +237,8 @@ struct WorkoutView: View {
         var completedNames: [String] = []
         let now = Int64(Date().timeIntervalSince1970 * 1000)
 
-        for plan in plansForSession {
+        for plan in sessionPlans {
+            guard !plan.completed else { continue }
             guard let key = ExerciseClassifierKey.key(forExerciseName: plan.exercise) else { continue }
             guard let reps = results[key]?.repetitions, reps >= plan.repeatCount else { continue }
             plan.completed = true

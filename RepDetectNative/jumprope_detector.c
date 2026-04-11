@@ -31,8 +31,8 @@
 /* 每隔多少帧打印一次常规状态 log（避免刷屏）*/
 #define LOG_INTERVAL 15
 
-/* 两次计数之间至少间隔（毫秒），避免晃手机/关键点抖动导致连加 */
-#define JR_COUNT_COOLDOWN_MS 520
+/* 两次计数之间至少间隔（毫秒）；过快跳绳需更短，仅靠平移检测挡晃镜头 */
+#define JR_COUNT_COOLDOWN_MS 280
 
 /* ────────────────────────────────────────────────
  * 内部工具函数
@@ -118,11 +118,11 @@ void jr_init(JumpRopeDetector *jr) {
         jr->cy_min       = 0.0f;
         jr->flip_flag    = JR_FLAG_HIGH;
 
-        // ✅ smooth_alpha 从 0.5 提高到 0.9，让 max/min 快速跟上真实波动
-        jr->smooth_alpha = 0.9f;
+        /* 略低于 0.9：真实跳绳髋部相对肩的起伏常小于「晃镜头」造成的整段平移在缓冲里形成的 dy */
+        jr->smooth_alpha = 0.85f;
 
-        /* dy_ratio 越大越要求髋部起伏相对肩髋距足够大，轻微晃镜头不易误计数 */
-        jr->dy_ratio     = 0.19f;
+        /* 略低以利真实跳绳；晃镜头主要靠肩髋同向平移与单帧尖峰抑制 */
+        jr->dy_ratio     = 0.14f;
 
         jr->up_ratio     = 0.55f;
         jr->down_ratio   = 0.35f;
@@ -165,17 +165,34 @@ int jr_process_frame(JumpRopeDetector *jr,
     float cy_shoulder = (left_shoulder_y + right_shoulder_y) * 0.5f;
     cy_shoulder_hip   = cy - cy_shoulder;
 
-    /* 单帧髋部 Y 跳变过大（常见：晃手机导致关键点抖动），不更新 flip 状态机 */
     int skip_flip = 0;
-    if (jr->has_prev_cy && cy_shoulder_hip > 30.0f) {
+
+    /* 晃镜头：肩中点与髋中点同向、位移比例接近 1，整体平移而非髋相对肩的屈伸 */
+    if (jr->has_prev_cy && jr->has_prev_shoulder && cy_shoulder_hip > 18.0f) {
+        float dhip = cy - jr->prev_cy;
+        float dsho = cy_shoulder - jr->prev_cy_shoulder;
+        float ah   = fabsf(dhip);
+        float as   = fabsf(dsho);
+        if (ah > 10.0f && as > 8.0f && dhip * dsho > 0.0f) {
+            float ratio = as > 1e-3f ? ah / as : 0.0f;
+            if (ratio > 0.58f && ratio < 1.65f) {
+                skip_flip = 1;
+            }
+        }
+    }
+
+    /* 单帧髋部 Y 跳变过大（关键点尖峰），不更新 flip 状态机 */
+    if (!skip_flip && jr->has_prev_cy && cy_shoulder_hip > 25.0f) {
         float jump     = fabsf(cy - jr->prev_cy);
-        float max_step = fmaxf(40.0f, 0.22f * cy_shoulder_hip);
+        float max_step = fmaxf(28.0f, 0.16f * cy_shoulder_hip);
         if (jump > max_step) {
             skip_flip = 1;
         }
     }
     jr->has_prev_cy = 1;
     jr->prev_cy     = cy;
+    jr->prev_cy_shoulder = cy_shoulder;
+    jr->has_prev_shoulder = 1;
 
     /* ── 每 LOG_INTERVAL 帧打印一次关键点原始值 ── */
     if (jr->buffer_count % LOG_INTERVAL == 0) {

@@ -43,7 +43,7 @@ struct ProfileView: View {
                     Text("姿态检测：Apple Vision · 动作分类：设备端 KNN（与 Android 共用同一套 C 核心）")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("在「计划 → 我的计划 → 计划详情」中开始锻炼；停止后会写入本次次数与时长。")
+                    Text("在「计划」中进入某条计划详情，再开始锻炼；停止后会写入本次次数与时长。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
